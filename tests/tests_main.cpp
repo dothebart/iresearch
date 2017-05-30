@@ -233,6 +233,12 @@ void flush_timers(std::ostream &out) {
   for (auto& entry: ordered_stats) {
     auto& key = entry.first;
     auto& count = entry.second.first;
+
+    // skip empty timers
+    if (!count) {
+      continue;
+    }
+
     auto& time = entry.second.second;
     out << key << "\tcalls:" << count << ",\ttime: " << time/1000 << " us,\tavg call: " << time/1000/(double)count << " us"<< std::endl;
   }

@@ -60,20 +60,6 @@ struct IRESEARCH_API postings_writer : util::const_attributes_provider {
 };
 
 /* -------------------------------------------------------------------
- * field_writer
- * ------------------------------------------------------------------*/
-
-struct IRESEARCH_API field_writer {
-  DECLARE_PTR(field_writer);
-  DECLARE_FACTORY(field_writer);
-
-  virtual ~field_writer();
-  virtual void prepare(const flush_state& state) = 0;
-  virtual void write(const std::string& name, field_id norm, const flags& features, term_iterator& data) = 0;
-  virtual void end() = 0;
-};
-
-/* -------------------------------------------------------------------
  * postings_reader
  * ------------------------------------------------------------------*/
 
@@ -147,6 +133,21 @@ struct IRESEARCH_API term_reader : util::const_attributes_provider {
 
   // most significant term
   virtual const bytes_ref& (max)() const = 0;
+};
+
+/* -------------------------------------------------------------------
+ * field_writer
+ * ------------------------------------------------------------------*/
+
+struct IRESEARCH_API field_writer {
+  DECLARE_PTR(field_writer);
+  DECLARE_FACTORY(field_writer);
+
+  virtual ~field_writer();
+  virtual void prepare(const flush_state& state) = 0;
+  virtual void write(const irs::basic_term_reader& terms) = 0;
+  virtual void write(const std::string& name, field_id norm, const flags& features, term_iterator& data) = 0;
+  virtual void end() = 0;
 };
 
 /* -------------------------------------------------------------------

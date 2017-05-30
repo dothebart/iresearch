@@ -260,7 +260,7 @@ NS_END // detail
 ///////////////////////////////////////////////////////////////////////////////
 /// @class field_writer
 ///////////////////////////////////////////////////////////////////////////////
-class field_writer final : public iresearch::field_writer {
+class field_writer final : public irs::field_writer {
  public:
   static const int32_t FORMAT_MIN = 0;
   static const int32_t FORMAT_MAX = FORMAT_MIN;
@@ -272,18 +272,23 @@ class field_writer final : public iresearch::field_writer {
   static const string_ref FORMAT_TERMS_INDEX;
   static const string_ref TERMS_INDEX_EXT;
 
-  field_writer(iresearch::postings_writer::ptr&& pw,
+  field_writer(irs::postings_writer::ptr&& pw,
                bool volatile_state,
                uint32_t min_block_size = DEFAULT_MIN_BLOCK_SIZE,
                uint32_t max_block_size = DEFAULT_MAX_BLOCK_SIZE);
 
-  virtual void prepare( const iresearch::flush_state& state ) override;
+  virtual void prepare(const irs::flush_state& state) override;
   virtual void end() override;
+
+  virtual void write(
+    const irs::basic_term_reader& terms
+  ) override;
+
   virtual void write( 
     const std::string& name,
-    iresearch::field_id norm,
-    const iresearch::flags& features,
-    iresearch::term_iterator& terms 
+    irs::field_id norm,
+    const irs::flags& features,
+    irs::term_iterator& terms
   ) override;
 
  private:
@@ -294,45 +299,52 @@ class field_writer final : public iresearch::field_writer {
   void write_segment_features(data_output& out, const flags& features);
   void write_field_features(data_output& out, const flags& features) const;
 
-  void begin_field(const iresearch::flags& field);
+  void begin_field(const irs::flags& field);
   void end_field(
     const std::string& name,
-    iresearch::field_id norm,
-    const iresearch::flags& features, 
+    irs::field_id norm,
+    const irs::flags& features,
     uint64_t total_doc_freq, 
     uint64_t total_term_freq, 
     size_t doc_count
   );
+  void end_field(
+    const irs::basic_term_reader& field,
+    uint64_t total_doc_freq,
+    uint64_t total_term_freq,
+    size_t term_count,
+    size_t doc_count
+  );
 
-  void write_term_entry( const detail::entry& e, size_t prefix, bool leaf );
-  void write_block_entry( const detail::entry& e, size_t prefix, uint64_t block_start );
-  /* prefix - prefix length ( in last_term )
-  * begin - index of the first entry in the block
-  * end - index of the last entry in the block
-  * meta - block metadata
-  * label - block lead label ( if present ) */
-  void write_block( std::list< detail::entry >& blocks,
-                    size_t prefix, size_t begin,
-                    size_t end, byte_type meta,
-                    int16_t label );
-  /* prefix - prefix length ( in last_term
-  * count - number of entries to write into block */
-  void write_blocks( size_t prefix, size_t count );
-  void push( const iresearch::bytes_ref& term );
+  void write_term_entry(const detail::entry& e, size_t prefix, bool leaf);
+  void write_block_entry(const detail::entry& e, size_t prefix, uint64_t block_start);
+  // prefix - prefix length (in last_term)
+  // begin - index of the first entry in the block
+  // end - index of the last entry in the block
+  // meta - block metadata
+  // label - block lead label (if present)
+  void write_block(std::list< detail::entry >& blocks,
+                   size_t prefix, size_t begin,
+                   size_t end, byte_type meta,
+                   int16_t label);
+  // prefix - prefix length ( in last_term
+  // count - number of entries to write into block
+  void write_blocks(size_t prefix, size_t count);
+  void push(const irs::bytes_ref& term);
 
   std::unordered_map<const attribute::type_id*, size_t> feature_map_;
-  iresearch::memory_output suffix; /* term suffix column */
-  iresearch::memory_output stats; /* term stats column */
-  iresearch::index_output::ptr terms_out; /* output stream for terms */
-  iresearch::index_output::ptr index_out; /* output stream for indexes*/
-  iresearch::postings_writer::ptr pw; /* postings writer */
+  irs::memory_output suffix; // term suffix column
+  irs::memory_output stats; // term stats column
+  irs::index_output::ptr terms_out; // output stream for terms
+  irs::index_output::ptr index_out; // output stream for indexes
+  irs::postings_writer::ptr pw; // postings writer
   std::vector< detail::entry > stack;
   std::unique_ptr<detail::fst_buffer> fst_buf_; // pimpl buffer used for building FST for fields
   detail::volatile_byte_ref last_term; // last pushed term
   std::vector<size_t> prefixes;
   std::pair<bool, detail::volatile_byte_ref> min_term; // current min term in a block
   detail::volatile_byte_ref max_term; // current max term in a block
-  uint64_t term_count;    /* count of terms */
+  uint64_t term_count; // count of terms
   size_t fields_count{};
   uint32_t min_block_size;
   uint32_t max_block_size;

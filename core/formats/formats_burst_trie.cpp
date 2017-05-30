@@ -1477,6 +1477,62 @@ void field_writer::prepare( const iresearch::flush_state& state ) {
   pw->prepare(*terms_out, state);
 }
 
+void field_writer::write(const irs::basic_term_reader& reader) {
+  REGISTER_TIMER_DETAILED();
+
+  // all the related streams must be initialized
+  assert(terms_out);
+  assert(index_out);
+
+  // at the beginning of the field there must be no pending
+  // entries at all
+  assert(stack.empty());
+
+  const auto& field = reader.meta();
+  const auto& features = field.features;
+
+  pw->begin_field(features);
+
+  uint64_t sum_dfreq = 0;
+  uint64_t sum_tfreq = 0;
+  size_t term_count = 0; // number of processed terms
+
+  const bool freq_exists = features.check<frequency>();
+  auto& docs = pw->attributes().get<version10::documents>();
+  assert(docs);
+
+  // aggregated by postings writer term attributes
+  attributes attrs;
+
+  for (auto terms = reader.iterator(); terms->next();) {
+    auto postings = terms->postings(features);
+    pw->write(*postings, attrs);
+
+    auto& meta = attrs.add<term_meta>();
+
+    if (freq_exists) {
+      auto& tfreq = attrs.add<frequency>();
+      sum_tfreq += tfreq->value;
+    }
+
+    if (meta->docs_count) {
+      sum_dfreq += meta->docs_count;
+
+      const auto& term = terms->value();
+      push(term);
+
+      // push term to the top of the stack
+      stack.emplace_back(term, std::move(attrs), volatile_state_);
+      attrs = std::move(attributes()); // insure valid internal state for reuse
+
+      // increase processed term count
+      ++term_count;
+    }
+  }
+
+  end_field(reader, sum_dfreq, sum_tfreq, term_count, docs->value->count());
+}
+
 void field_writer::write(
     const std::string& name,
     iresearch::field_id norm,
@@ -1573,6 +1629,58 @@ void field_writer::write_field_features(data_output& out, const flags& features)
     assert(it != feature_map_.end());
     out.write_vlong(it->second);
   }
+}
+
+void field_writer::end_field(
+    const irs::basic_term_reader& field,
+    uint64_t total_doc_freq,
+    uint64_t total_term_freq,
+    size_t term_count,
+    size_t doc_count) {
+  assert(terms_out);
+  assert(index_out);
+  using namespace detail;
+
+  if (!term_count) {
+    // nothing to write
+    return;
+  }
+
+  // cause creation of all final blocks
+  push(bytes_ref::nil);
+
+  // write root block with empty prefix
+  write_blocks(0, stack.size());
+  assert(1 == stack.size());
+  const entry& root = *stack.begin();
+
+  // build fst
+  assert(fst_buf_);
+  auto& fst = fst_buf_->reset(root.block().index);
+
+  const auto& meta = field.meta();
+  const auto& features = meta.features;
+
+  // write field meta
+  write_string(*index_out, meta.name);
+  write_field_features(*index_out, meta.features);
+  write_zvlong(*index_out, meta.norm);
+  index_out->write_vlong(term_count);
+  index_out->write_vlong(doc_count);
+  index_out->write_vlong(total_doc_freq);
+  write_string(*index_out, field.min());
+  write_string(*index_out, field.max());
+  if (features.check<frequency>()) {
+    index_out->write_vlong(total_term_freq);
+  }
+
+  // write fst
+  output_buf isb(index_out.get()); // wrap stream to be OpenFST compliant
+  std::ostream os(&isb);
+  fst.Write(os, fst::FstWriteOptions());
+
+  stack.clear();
+  ++fields_count;
 }
 
 void field_writer::end_field(

@@ -323,6 +323,7 @@ class field_writer : public iresearch::field_writer {
   void features(const iresearch::flags& features) { features_ = features; }
 
   virtual void prepare(const iresearch::flush_state& state) override;
+  virtual void write(const irs::basic_term_reader& reader) { }
   virtual void write(const std::string& name, iresearch::field_id norm, const iresearch::flags& expected_field, iresearch::term_iterator& actual_term) override;
   virtual void end() override;
 
